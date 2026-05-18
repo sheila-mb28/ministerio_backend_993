@@ -18,7 +18,7 @@ jobs:
       postgres-test:
         image: postgres:15
         env:
-          POSTGRES_DB: gobierno_xxx
+          POSTGRES_DB: gobierno_smmb
           POSTGRES_USER: aaee_gobierno
           POSTGRES_PASSWORD: aaee1234
         ports:
@@ -44,7 +44,7 @@ jobs:
       - name: Compilar proyecto
         run: mvn clean package
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/gobierno_xxx
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/gobierno_smmb
           SPRING_DATASOURCE_USERNAME: aaee_gobierno
           SPRING_DATASOURCE_PASSWORD: aaee1234
 
