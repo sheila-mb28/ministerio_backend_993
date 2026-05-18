@@ -1,3 +1,7 @@
+# =========================================================
+# CI/CD con despliegue automático en EC2
+# =========================================================
+
 name: CI/CD + Deploy EC2
 
 on:
@@ -11,14 +15,20 @@ permissions:
 
 jobs:
 
+  # =======================================================
+  # JOB 1 -> BUILD Y PUSH DE LA IMAGEN DOCKER
+  # =======================================================
   build-and-push:
+
     runs-on: ubuntu-latest
 
+    # 🐘 Añadimos una base de datos PostgreSQL temporal en GitHub Actions
+    # para que los tests tengan un "entorno" real donde ejecutarse.
     services:
       postgres-test:
         image: postgres:15
         env:
-          POSTGRES_DB: gobierno_smmb
+          POSTGRES_DB: gobierno_smmb   # ⚠️ Sustituye por tu base de datos
           POSTGRES_USER: aaee_gobierno
           POSTGRES_PASSWORD: aaee1234
         ports:
@@ -31,9 +41,11 @@ jobs:
 
     steps:
 
+      # Descargar código
       - name: Checkout código
         uses: actions/checkout@v4
 
+      # Configurar Java
       - name: Configurar Java
         uses: actions/setup-java@v4
         with:
@@ -41,13 +53,16 @@ jobs:
           java-version: 23
           cache: maven
 
+      # Compilar proyecto (incluyendo tests)
+      # 🛠️ AQUÍ ESTÁ EL TRUCO: Le pasamos las variables de entorno que Spring Boot necesita para los tests
       - name: Compilar proyecto
         run: mvn clean package
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/gobierno_smmb
+          SPRING_DATASOURCE_URL: jdbc:postgresql://13.221.134.57:5432/gobierno_smmb # ⚠️ Sustituye por tu BBDD
           SPRING_DATASOURCE_USERNAME: aaee_gobierno
           SPRING_DATASOURCE_PASSWORD: aaee1234
 
+      # Login en GitHub Container Registry
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
@@ -55,6 +70,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build y Push de imagen Docker
       - name: Build y Push
         uses: docker/build-push-action@v5
         with:
@@ -62,20 +78,45 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
 
+  # =======================================================
+  # JOB 2 -> DESPLIEGUE AUTOMÁTICO EN EC2
+  # =======================================================
   deploy:
+
+    # Este job SOLO se ejecuta si el anterior termina bien
     needs: build-and-push
+
     runs-on: ubuntu-latest
 
     steps:
 
+      # ---------------------------------------------------
+      # Conexión SSH a EC2 y despliegue
+      # ---------------------------------------------------
       - name: Deploy en EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
+
+          # IP pública EC2
           host: ${{ secrets.EC2_HOST }}
+
+          # Usuario instancia EC2
           username: ${{ secrets.EC2_USER }}
+
+          # Clave privada SSH
           key: ${{ secrets.EC2_SSH_KEY }}
+
+          # Comandos que se ejecutarán dentro del servidor
           script: |
+
+            # Entrar en carpeta aplicación
             cd ~/app
+
+            # Descargar última imagen Docker
             docker compose pull
+
+            # Parar contenedores antiguos
             docker compose down
+
+            # Levantar nueva versión
             docker compose up -d
