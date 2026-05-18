@@ -1,49 +1,81 @@
-name: Primer flujo de trabajo CI/CD (Build, Test and Push Docker Image) para Ampliación de Entornos de Desarrollo
+name: CI/CD + Deploy EC2
 
-# ===== Permisos del token automático de GitHub para que pueda "subir"(push del paso 4.) la imagen docker generada en el paso 3.
-# ===== La imagen se subirá al área de registro de GitHub ghcr.io/profies/aaee_mapamundi_sb =====
+on:
+  push:
+    branches:
+      - main
+
 permissions:
   contents: read
   packages: write
 
-# ===== Disparadores del workflow =====
-on:
-  push:
-    branches:
-      - '**' # Cualquier rama 
-
-# ===== Tareas del workflow =====
 jobs:
+
   build-and-push:
     runs-on: ubuntu-latest
 
-    steps:
-    
-      # 1. Descarga código
-      - name: Checkout code
-        uses: actions/checkout@v3
+    services:
+      postgres-test:
+        image: postgres:15
+        env:
+          POSTGRES_DB: gobierno_xxx
+          POSTGRES_USER: aaee_gobierno
+          POSTGRES_PASSWORD: aaee1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-      # 2. JDK/Maven para tests previos
-      - name: Configución pasar TEST
-        uses: actions/setup-java@v3
+    steps:
+
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 23
+          cache: maven
 
-      - name: Construir proyecto con Maven
+      - name: Compilar proyecto
         run: mvn clean package
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/gobierno_xxx
+          SPRING_DATASOURCE_USERNAME: aaee_gobierno
+          SPRING_DATASOURCE_PASSWORD: aaee1234
 
-      # 3. Construir la imagen Docker usando el Dockerfile
-      - name: Build Docker image
-        run: docker build -t ghcr.io/${{ github.repository }}:latest .
-
-      # 4. Push a GHCR (GitHub Container Registry)
-      - name: Push Docker image
-        uses: docker/login-action@v2
+      - name: Login GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push image
-        run: docker push ghcr.io/${{ github.repository }}:latest
+      - name: Build y Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Deploy en EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/app
+            docker compose pull
+            docker compose down
+            docker compose up -d

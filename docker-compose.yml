@@ -1,0 +1,26 @@
+services:
+
+  bbdd:
+    image: postgres:15
+    container_name: postgresql_smmb
+    env_file:
+      - .env
+    ports:
+      - "4444:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/sheila-mb28/ministerio_backend_993:latest
+    container_name: spring_api
+    env_file:
+      - .env
+    depends_on:
+      - bbdd
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
